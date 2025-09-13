@@ -1,0 +1,9 @@
+model PollOption {
+  id     Int    @id @default(autoincrement())
+  text   String
+
+  poll   Poll   @relation(fields: [pollId], references: [id])
+  pollId Int
+
+  votes  Vote[]
+}

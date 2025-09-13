@@ -1,10 +1,19 @@
 const express = require('express');
+const { testConnection, closePool } = require('./db');
 const { successResponse, healthResponse, errorResponse } = require('./utils/response');
 
 const app = express();
 
 // Middleware
 app.use(express.json());
+
+// Test database connection on startup
+const initializeDatabase = async () => {
+    const isConnected = await testConnection();
+    if (!isConnected) {
+        console.log('⚠️  Server starting without database connection');
+    }
+};
 
 // Start server
 const PORT = 5000;
@@ -56,4 +65,7 @@ process.on('SIGTERM', async () => {
 app.listen(PORT, async () => {
     console.log(`🚀 Server is running on port ${PORT}`);
     console.log(`🌐 http://localhost:${PORT}`);
+
+    // Initialize database connection
+    await initializeDatabase();
 });
