@@ -1,4 +1,5 @@
 const express = require('express');
+const { successResponse, healthResponse, errorResponse } = require('./utils/response');
 
 const app = express();
 
@@ -8,11 +9,51 @@ app.use(express.json());
 // Start server
 const PORT = 5000;
 
+// Root endpoint
 app.get('/', (req, res) => {
-    res.send('Api Running');
+    return successResponse(res, { message: 'PulsePoll API is running' }, 'Welcome to PulsePoll API');
 });
 
-app.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
-    console.log(`http://localhost:${PORT}`);
+app.get('/health', async (req, res) => {
+    try {
+        const isConnected = await testConnection();
+        const healthData = {
+            status: 'OK',
+            database: isConnected ? 'Connected and API is Running..' : 'Disconnected',
+            uptime: process.uptime(),
+            memory: process.memoryUsage(),
+            version: process.version
+        };
+
+        return healthResponse(res, healthData, isConnected);
+    } catch (error) {
+        const healthData = {
+            status: 'Error',
+            database: 'Error',
+            error: error.message,
+            uptime: process.uptime(),
+            memory: process.memoryUsage(),
+            version: process.version
+        };
+
+        return healthResponse(res, healthData, false);
+    }
+});
+
+// Graceful shutdown
+process.on('SIGINT', async () => {
+    console.log('\n🛑 Shutting down server...');
+    await closePool();
+    process.exit(0);
+});
+
+process.on('SIGTERM', async () => {
+    console.log('\n🛑 Shutting down server...');
+    await closePool();
+    process.exit(0);
+});
+
+app.listen(PORT, async () => {
+    console.log(`🚀 Server is running on port ${PORT}`);
+    console.log(`🌐 http://localhost:${PORT}`);
 });
