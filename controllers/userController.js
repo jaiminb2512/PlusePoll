@@ -87,7 +87,9 @@ const loginUser = async (req, res) => {
             name: user.name,
             email: user.email,
             createdAt: user.createdAt,
-            updatedAt: user.updatedAt
+            updatedAt: user.updatedAt,
+            accessToken: tokens.accessToken,
+            refreshToken: tokens.refreshToken
         };
 
         return successResponse(res, userData, 'Login successful');
@@ -312,14 +314,18 @@ const refreshToken = async (req, res) => {
             maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
         });
 
-        return successResponse(res, { user }, 'Token refreshed successfully');
+        return successResponse(res, {
+            user,
+            accessToken: tokens.accessToken,
+            refreshToken: tokens.refreshToken
+        }, 'Token refreshed successfully');
     } catch (error) {
         console.error('Refresh token error:', error);
         return errorResponse(res, 'Invalid or expired refresh token', 401);
     }
 };
 
-    
+
 const getCurrentUser = async (req, res) => {
     try {
         return successResponse(res, req.user, 'Current user retrieved successfully');

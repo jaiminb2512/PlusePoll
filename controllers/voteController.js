@@ -1,5 +1,6 @@
 const { PrismaClient } = require('@prisma/client');
 const { successResponse, errorResponse } = require('../utils/response');
+const { broadcastVoteUpdate } = require('../services/socketService');
 
 const prisma = new PrismaClient();
 
@@ -38,6 +39,19 @@ const addVote = async (req, res) => {
             return errorResponse(res, 'Invalid poll option for this poll', 400);
         }
 
+        const existingVote = await prisma.vote.findUnique({
+            where: {
+                userId_pollOptionId: {
+                    userId: userId,
+                    pollOptionId: pollOptionId
+                }
+            }
+        });
+
+        if (existingVote) {
+            return errorResponse(res, 'You have already voted for this option', 400);
+        }
+
         const vote = await prisma.vote.create({
             data: {
                 userId: userId,
@@ -66,6 +80,8 @@ const addVote = async (req, res) => {
                 }
             }
         });
+
+        await broadcastVoteUpdate(pollId);
 
         return successResponse(res, vote, 'Vote added successfully', 201);
     } catch (error) {
@@ -140,6 +156,8 @@ const updateVote = async (req, res) => {
             }
         });
 
+        await broadcastVoteUpdate(pollId);
+
         return successResponse(res, updatedVote, 'Vote updated successfully');
     } catch (error) {
         console.error('Update vote error:', error);
@@ -165,6 +183,11 @@ const removeVote = async (req, res) => {
             return errorResponse(res, 'No vote found to remove', 404);
         }
 
+        const poll = await prisma.pollOption.findUnique({
+            where: { id: pollOptionId },
+            select: { pollId: true }
+        });
+
         await prisma.vote.delete({
             where: {
                 userId_pollOptionId: {
@@ -173,6 +196,10 @@ const removeVote = async (req, res) => {
                 }
             }
         });
+
+        if (poll) {
+            await broadcastVoteUpdate(poll.pollId);
+        }
 
         return successResponse(res, null, 'Vote removed successfully');
     } catch (error) {

@@ -1,7 +1,9 @@
 const express = require('express');
 const cookieParser = require('cookie-parser');
+const http = require('http');
 const { closePool } = require('./db');
 const routes = require('./routes');
+const { initializeSocket } = require('./services/socketService');
 require('dotenv').config();
 
 const app = express();
@@ -9,6 +11,7 @@ const app = express();
 
 app.use(express.json());
 app.use(cookieParser());
+app.use(express.static('public'));
 
 const initializeDatabase = async () => {
     const { testConnection } = require('./db');
@@ -34,9 +37,14 @@ process.on('SIGTERM', async () => {
     process.exit(0);
 });
 
-app.listen(PORT, async () => {
+const server = http.createServer(app);
+
+initializeSocket(server);
+
+server.listen(PORT, async () => {
     console.log(`🚀 Server is running on port ${PORT}`);
     console.log(`🌐 http://localhost:${PORT}`);
-    
+    console.log(`🔌 WebSocket server initialized`);
+
     await initializeDatabase();
 });

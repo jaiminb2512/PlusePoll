@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PulsePoll WebSocket Client Example</title>
+    <script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f9fafc;
+            color: #333;
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 20px;
+            font-size: 2rem;
+            color: #2c3e50;
+        }
+
+        .poll-container {
+            background: #fff;
+            border: 1px solid #e6e6e6;
+            padding: 25px;
+            margin: 25px 0;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
+            transition: transform 0.2s ease;
+        }
+
+        .poll-container:hover {
+            transform: translateY(-2px);
+        }
+
+        .option {
+            margin: 12px 0;
+            padding: 12px 15px;
+            background: #f8f9fc;
+            border: 1px solid #e2e6ea;
+            border-radius: 8px;
+            transition: background 0.2s ease;
+        }
+
+        .option:hover {
+            background: #eef3f9;
+        }
+
+        .vote-count {
+            font-weight: 600;
+            color: #007bff;
+        }
+
+        .percentage {
+            color: #28a745;
+            font-weight: 500;
+        }
+
+        .status {
+            padding: 12px;
+            margin: 15px 0;
+            border-radius: 8px;
+            font-weight: 600;
+            text-align: center;
+        }
+
+        .connected {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .disconnected {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        input,
+        button {
+            padding: 10px 14px;
+            margin: 6px;
+            border: 1px solid #ccc;
+            border-radius: 6px;
+            outline: none;
+            font-size: 14px;
+            transition: all 0.2s ease;
+        }
+
+        input:focus {
+            border-color: #007bff;
+            box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.15);
+        }
+
+        button {
+            cursor: pointer;
+            background: #007bff;
+            color: #fff;
+            border: none;
+            font-weight: 600;
+        }
+
+        button:hover {
+            background: #0056b3;
+        }
+
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+
+        #logs {
+            margin-top: 25px;
+        }
+
+        #logs h3 {
+            margin-bottom: 10px;
+            color: #2c3e50;
+        }
+
+        #logContainer {
+            height: 200px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            padding: 12px;
+            border-radius: 8px;
+            background: #ffffff;
+            box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.05);
+            font-size: 14px;
+        }
+    </style>
+
+</head>
+
+<body>
+    <h1>PulsePoll WebSocket Client Example</h1>
+
+    <div id="status" class="status disconnected">Disconnected</div>
+
+    <div>
+        <input type="text" id="tokenInput" placeholder="Enter JWT Token" style="width: 300px;">
+        <button onclick="connect()">Connect</button>
+        <button onclick="disconnect()">Disconnect</button>
+    </div>
+
+    <div>
+        <input type="text" id="pollIdInput" placeholder="Enter Poll ID">
+        <button onclick="joinPoll()">Join Poll</button>
+        <button onclick="leavePoll()">Leave Poll</button>
+    </div>
+
+    <div id="pollContainer" class="poll-container" style="display: none;">
+        <h2 id="pollQuestion">Poll Question</h2>
+        <div id="totalVotes">Total Votes: 0</div>
+        <div id="optionsContainer"></div>
+    </div>
+
+    <div id="logs" style="margin-top: 20px;">
+        <h3>Event Logs:</h3>
+        <div id="logContainer"
+            style="height: 200px; overflow-y: auto; border: 1px solid #ddd; padding: 10px; background: #f8f9fa;"></div>
+    </div>
+
+    <script>
+        let socket = null;
+        let currentPollId = null;
+
+        function log(message) {
+            const logContainer = document.getElementById('logContainer');
+            const timestamp = new Date().toLocaleTimeString();
+            logContainer.innerHTML += `<div>[${timestamp}] ${message}</div>`;
+            logContainer.scrollTop = logContainer.scrollHeight;
+        }
+
+        function updateStatus(connected) {
+            const status = document.getElementById('status');
+            if (connected) {
+                status.textContent = 'Connected';
+                status.className = 'status connected';
+            } else {
+                status.textContent = 'Disconnected';
+                status.className = 'status disconnected';
+            }
+        }
+
+        function connect() {
+            const token = document.getElementById('tokenInput').value;
+            if (!token) {
+                alert('Please enter a JWT token');
+                return;
+            }
+
+            const url = process.env.CLIENT_URL;
+            socket = io(url, {
+                auth: {
+                    token: token
+                }
+            });
+
+            socket.on('connect', () => {
+                log('Connected to server');
+                updateStatus(true);
+            });
+
+            socket.on('disconnect', () => {
+                log('Disconnected from server');
+                updateStatus(false);
+            });
+
+            socket.on('connect_error', (error) => {
+                log(`Connection error: ${error.message}`);
+                updateStatus(false);
+            });
+
+            socket.on('vote-update', (data) => {
+                log(`Vote update received for poll ${data.pollId}`);
+                updatePollDisplay(data);
+            });
+
+            socket.on('poll-update', (data) => {
+                log(`Poll update received: ${data.updateType}`);
+            });
+        }
+
+        function disconnect() {
+            if (socket) {
+                socket.disconnect();
+                socket = null;
+                updateStatus(false);
+                log('Manually disconnected');
+            }
+        }
+
+        function joinPoll() {
+            const pollId = document.getElementById('pollIdInput').value;
+            if (!pollId) {
+                alert('Please enter a poll ID');
+                return;
+            }
+
+            if (!socket || !socket.connected) {
+                alert('Please connect first');
+                return;
+            }
+
+            if (currentPollId) {
+                socket.emit('leave-poll', currentPollId);
+            }
+
+            socket.emit('join-poll', pollId);
+            currentPollId = pollId;
+            log(`Joined poll room: ${pollId}`);
+        }
+
+        function leavePoll() {
+            if (socket && currentPollId) {
+                socket.emit('leave-poll', currentPollId);
+                log(`Left poll room: ${currentPollId}`);
+                currentPollId = null;
+                document.getElementById('pollContainer').style.display = 'none';
+            }
+        }
+
+        function updatePollDisplay(data) {
+            document.getElementById('pollQuestion').textContent = data.question;
+            document.getElementById('totalVotes').textContent = `Total Votes: ${data.totalVotes}`;
+
+            const optionsContainer = document.getElementById('optionsContainer');
+            optionsContainer.innerHTML = '';
+
+            data.options.forEach(option => {
+                const optionDiv = document.createElement('div');
+                optionDiv.className = 'option';
+                optionDiv.innerHTML = `
+                    <strong>${option.text}</strong><br>
+                    <span class="vote-count">${option.voteCount} votes</span> 
+                    <span class="percentage">(${option.percentage}%)</span>
+                `;
+                optionsContainer.appendChild(optionDiv);
+            });
+
+            document.getElementById('pollContainer').style.display = 'block';
+        }
+    </script>
+</body>
+
+</html>
