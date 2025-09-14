@@ -13,7 +13,7 @@ const router = express.Router();
 
 router.post('/', authenticateToken, addVote);
 router.put('/', authenticateToken, updateVote);
-router.delete('/:pollId', authenticateToken, removeVote);
+router.delete('/:pollOptionId', authenticateToken, removeVote);
 router.get('/my', authenticateToken, getUserVotes);
 router.get('/poll/:pollId', authenticateToken, getPollVotes);
 router.get('/poll/:pollId/my', authenticateToken, getUserVoteForPoll);

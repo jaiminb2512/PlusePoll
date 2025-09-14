@@ -38,19 +38,6 @@ const addVote = async (req, res) => {
             return errorResponse(res, 'Invalid poll option for this poll', 400);
         }
 
-        const existingVote = await prisma.vote.findUnique({
-            where: {
-                userId_pollId: {
-                    userId: userId,
-                    pollId: pollId
-                }
-            }
-        });
-
-        if (existingVote) {
-            return errorResponse(res, 'You have already voted on this poll', 409);
-        }
-
         const vote = await prisma.vote.create({
             data: {
                 userId: userId,
@@ -98,9 +85,9 @@ const updateVote = async (req, res) => {
 
         const existingVote = await prisma.vote.findUnique({
             where: {
-                userId_pollId: {
+                userId_pollOptionId: {
                     userId: userId,
-                    pollId: pollId
+                    pollOptionId: pollOptionId
                 }
             }
         });
@@ -122,9 +109,9 @@ const updateVote = async (req, res) => {
 
         const updatedVote = await prisma.vote.update({
             where: {
-                userId_pollId: {
+                userId_pollOptionId: {
                     userId: userId,
-                    pollId: pollId
+                    pollOptionId: pollOptionId
                 }
             },
             data: {
@@ -162,14 +149,14 @@ const updateVote = async (req, res) => {
 
 const removeVote = async (req, res) => {
     try {
-        const { pollId } = req.params;
+        const { pollOptionId } = req.params;
         const userId = req.user.id;
 
         const existingVote = await prisma.vote.findUnique({
             where: {
-                userId_pollId: {
+                userId_pollOptionId: {
                     userId: userId,
-                    pollId: pollId
+                    pollOptionId: pollOptionId
                 }
             }
         });
@@ -180,9 +167,9 @@ const removeVote = async (req, res) => {
 
         await prisma.vote.delete({
             where: {
-                userId_pollId: {
+                userId_pollOptionId: {
                     userId: userId,
-                    pollId: pollId
+                    pollOptionId: pollOptionId
                 }
             }
         });
@@ -298,12 +285,10 @@ const getUserVoteForPoll = async (req, res) => {
         const { pollId } = req.params;
         const userId = req.user.id;
 
-        const vote = await prisma.vote.findUnique({
+        const votes = await prisma.vote.findMany({
             where: {
-                userId_pollId: {
-                    userId: userId,
-                    pollId: pollId
-                }
+                userId: userId,
+                pollId: pollId
             },
             include: {
                 pollOption: {
@@ -315,11 +300,7 @@ const getUserVoteForPoll = async (req, res) => {
             }
         });
 
-        if (!vote) {
-            return successResponse(res, null, 'No vote found for this poll');
-        }
-
-        return successResponse(res, vote, 'User vote retrieved successfully');
+        return successResponse(res, votes, 'User votes for poll retrieved successfully');
     } catch (error) {
         console.error('Get user vote for poll error:', error);
         return errorResponse(res, 'Internal server error', 500);

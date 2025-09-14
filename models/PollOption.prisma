@@ -1,9 +1,11 @@
 model PollOption {
-  id     Int    @id @default(autoincrement())
+  id     String @id @default(cuid())
   text   String
 
-  poll   Poll   @relation(fields: [pollId], references: [id])
-  pollId Int
+  poll   Poll   @relation(fields: [pollId], references: [id], onDelete: Cascade)
+  pollId String
 
   votes  Vote[]
+
+  @@map("poll_options")
 }
