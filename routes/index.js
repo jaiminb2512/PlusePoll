@@ -6,6 +6,7 @@ const router = express.Router();
 
 const userRoutes = require('./userRoutes');
 const pollRoutes = require('./pollRoutes');
+const voteRoutes = require('./voteRoutes');
 
 router.get('/', (req, res) => {
     return successResponse(res, { message: 'PulsePoll API is running' }, 'Welcome to PulsePoll API');
@@ -39,5 +40,6 @@ router.get('/health', async (req, res) => {
 
 router.use('/users', userRoutes);
 router.use('/polls', pollRoutes);
+router.use('/votes', voteRoutes);
 
 module.exports = router;
