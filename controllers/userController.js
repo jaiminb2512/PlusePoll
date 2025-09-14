@@ -5,17 +5,14 @@ const { generateTokens, verifyToken } = require('../services/jwtService');
 
 const prisma = new PrismaClient();
 
-// Register a new user
 const registerUser = async (req, res) => {
     try {
         const { name, email, password } = req.body;
 
-        // Validate required fields
         if (!name || !email || !password) {
             return errorResponse(res, 'Name, email, and password are required', 400);
         }
 
-        // Check if user already exists
         const existingUser = await prisma.user.findUnique({
             where: { email }
         });
@@ -24,11 +21,9 @@ const registerUser = async (req, res) => {
             return errorResponse(res, 'User with this email already exists', 409);
         }
 
-        // Hash password
         const saltRounds = 12;
         const passwordHash = await bcrypt.hash(password, saltRounds);
 
-        // Create user
         const user = await prisma.user.create({
             data: {
                 name,
@@ -51,17 +46,14 @@ const registerUser = async (req, res) => {
     }
 };
 
-// Login user
 const loginUser = async (req, res) => {
     try {
         const { email, password } = req.body;
 
-        // Validate required fields
         if (!email || !password) {
             return errorResponse(res, 'Email and password are required', 400);
         }
 
-        // Find user by email
         const user = await prisma.user.findUnique({
             where: { email }
         });
@@ -70,16 +62,13 @@ const loginUser = async (req, res) => {
             return errorResponse(res, 'Invalid email or password', 401);
         }
 
-        // Verify password
         const isValidPassword = await bcrypt.compare(password, user.passwordHash);
         if (!isValidPassword) {
             return errorResponse(res, 'Invalid email or password', 401);
         }
 
-        // Generate JWT tokens
         const tokens = generateTokens(user);
 
-        // Set cookies
         const cookieOptions = {
             httpOnly: true,
             secure: process.env.NODE_ENV === 'production',
@@ -93,7 +82,6 @@ const loginUser = async (req, res) => {
             maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
         });
 
-        // Return user data (excluding password)
         const userData = {
             id: user.id,
             name: user.name,
@@ -109,7 +97,6 @@ const loginUser = async (req, res) => {
     }
 };
 
-// Get user profile
 const getUserProfile = async (req, res) => {
     try {
         const { userId } = req.params;
@@ -167,13 +154,11 @@ const getUserProfile = async (req, res) => {
     }
 };
 
-// Update user profile
 const updateUserProfile = async (req, res) => {
     try {
         const { userId } = req.params;
         const { name, email } = req.body;
 
-        // Check if user exists
         const existingUser = await prisma.user.findUnique({
             where: { id: userId }
         });
@@ -182,7 +167,6 @@ const updateUserProfile = async (req, res) => {
             return errorResponse(res, 'User not found', 404);
         }
 
-        // Check if email is being changed and if it's already taken
         if (email && email !== existingUser.email) {
             const emailExists = await prisma.user.findUnique({
                 where: { email }
@@ -193,7 +177,6 @@ const updateUserProfile = async (req, res) => {
             }
         }
 
-        // Update user
         const updatedUser = await prisma.user.update({
             where: { id: userId },
             data: {
@@ -216,7 +199,6 @@ const updateUserProfile = async (req, res) => {
     }
 };
 
-// Change password
 const changePassword = async (req, res) => {
     try {
         const { userId } = req.params;
@@ -226,7 +208,6 @@ const changePassword = async (req, res) => {
             return errorResponse(res, 'Current password and new password are required', 400);
         }
 
-        // Find user
         const user = await prisma.user.findUnique({
             where: { id: userId }
         });
@@ -235,17 +216,14 @@ const changePassword = async (req, res) => {
             return errorResponse(res, 'User not found', 404);
         }
 
-        // Verify current password
         const isValidPassword = await bcrypt.compare(currentPassword, user.passwordHash);
         if (!isValidPassword) {
             return errorResponse(res, 'Current password is incorrect', 401);
         }
 
-        // Hash new password
         const saltRounds = 12;
         const newPasswordHash = await bcrypt.hash(newPassword, saltRounds);
 
-        // Update password
         await prisma.user.update({
             where: { id: userId },
             data: { passwordHash: newPasswordHash }
@@ -258,12 +236,10 @@ const changePassword = async (req, res) => {
     }
 };
 
-// Delete user account
 const deleteUser = async (req, res) => {
     try {
         const { userId } = req.params;
 
-        // Check if user exists
         const user = await prisma.user.findUnique({
             where: { id: userId }
         });
@@ -272,7 +248,6 @@ const deleteUser = async (req, res) => {
             return errorResponse(res, 'User not found', 404);
         }
 
-        // Delete user (cascade will handle related records)
         await prisma.user.delete({
             where: { id: userId }
         });
@@ -285,10 +260,8 @@ const deleteUser = async (req, res) => {
 };
 
 
-// Logout user
 const logoutUser = async (req, res) => {
     try {
-        // Clear cookies
         res.clearCookie('accessToken');
         res.clearCookie('refreshToken');
 
@@ -299,7 +272,6 @@ const logoutUser = async (req, res) => {
     }
 };
 
-// Refresh token
 const refreshToken = async (req, res) => {
     try {
         const refreshToken = req.cookies?.refreshToken;
@@ -308,10 +280,8 @@ const refreshToken = async (req, res) => {
             return errorResponse(res, 'Refresh token required', 401);
         }
 
-        // Verify refresh token
         const decoded = verifyToken(refreshToken);
 
-        // Get user from database
         const user = await prisma.user.findUnique({
             where: { id: decoded.userId },
             select: {
@@ -327,10 +297,8 @@ const refreshToken = async (req, res) => {
             return errorResponse(res, 'User not found', 401);
         }
 
-        // Generate new tokens
         const tokens = generateTokens(user);
 
-        // Set new cookies
         const cookieOptions = {
             httpOnly: true,
             secure: process.env.NODE_ENV === 'production',
@@ -351,10 +319,9 @@ const refreshToken = async (req, res) => {
     }
 };
 
-// Get current user (from token)
+    
 const getCurrentUser = async (req, res) => {
     try {
-        // User is already attached to req by auth middleware
         return successResponse(res, req.user, 'Current user retrieved successfully');
     } catch (error) {
         console.error('Get current user error:', error);

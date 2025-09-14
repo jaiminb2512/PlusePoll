@@ -2,14 +2,14 @@ const express = require('express');
 const cookieParser = require('cookie-parser');
 const { closePool } = require('./db');
 const routes = require('./routes');
+require('dotenv').config();
 
 const app = express();
 
-// Middleware
+
 app.use(express.json());
 app.use(cookieParser());
 
-// Test database connection on startup
 const initializeDatabase = async () => {
     const { testConnection } = require('./db');
     const isConnected = await testConnection();
@@ -18,13 +18,10 @@ const initializeDatabase = async () => {
     }
 };
 
-// Start server
-const PORT = 5000;
+const PORT = process.env.PORT;
 
-// Mount all routes
 app.use('/api', routes);
 
-// Graceful shutdown
 process.on('SIGINT', async () => {
     console.log('\n🛑 Shutting down server...');
     await closePool();
@@ -40,7 +37,6 @@ process.on('SIGTERM', async () => {
 app.listen(PORT, async () => {
     console.log(`🚀 Server is running on port ${PORT}`);
     console.log(`🌐 http://localhost:${PORT}`);
-
-    // Initialize database connection
+    
     await initializeDatabase();
 });
