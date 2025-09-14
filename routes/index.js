@@ -4,15 +4,12 @@ const { successResponse, healthResponse } = require('../utils/response');
 
 const router = express.Router();
 
-// Import route modules
 const userRoutes = require('./userRoutes');
 
-// Root endpoint
 router.get('/', (req, res) => {
     return successResponse(res, { message: 'PulsePoll API is running' }, 'Welcome to PulsePoll API');
 });
 
-// Health check endpoint
 router.get('/health', async (req, res) => {
     try {
         const isConnected = await testConnection();
@@ -39,11 +36,6 @@ router.get('/health', async (req, res) => {
     }
 });
 
-// Mount route modules
 router.use('/users', userRoutes);
-
-// TODO: Add more route modules here as you create them
-// router.use('/polls', pollRoutes);
-// router.use('/votes', voteRoutes);
 
 module.exports = router;

@@ -1,4 +1,5 @@
 const express = require('express');
+const cookieParser = require('cookie-parser');
 const { closePool } = require('./db');
 const routes = require('./routes');
 
@@ -6,6 +7,7 @@ const app = express();
 
 // Middleware
 app.use(express.json());
+app.use(cookieParser());
 
 // Test database connection on startup
 const initializeDatabase = async () => {

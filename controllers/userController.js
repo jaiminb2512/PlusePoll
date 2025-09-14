@@ -1,6 +1,7 @@
 const { PrismaClient } = require('@prisma/client');
 const bcrypt = require('bcryptjs');
 const { successResponse, errorResponse } = require('../utils/response');
+const { generateTokens, verifyToken } = require('../services/jwtService');
 
 const prisma = new PrismaClient();
 
@@ -74,6 +75,23 @@ const loginUser = async (req, res) => {
         if (!isValidPassword) {
             return errorResponse(res, 'Invalid email or password', 401);
         }
+
+        // Generate JWT tokens
+        const tokens = generateTokens(user);
+
+        // Set cookies
+        const cookieOptions = {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'strict',
+            maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+        };
+
+        res.cookie('accessToken', tokens.accessToken, cookieOptions);
+        res.cookie('refreshToken', tokens.refreshToken, {
+            ...cookieOptions,
+            maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
+        });
 
         // Return user data (excluding password)
         const userData = {
@@ -267,9 +285,89 @@ const deleteUser = async (req, res) => {
 };
 
 
+// Logout user
+const logoutUser = async (req, res) => {
+    try {
+        // Clear cookies
+        res.clearCookie('accessToken');
+        res.clearCookie('refreshToken');
+
+        return successResponse(res, null, 'Logout successful');
+    } catch (error) {
+        console.error('Logout user error:', error);
+        return errorResponse(res, 'Internal server error', 500);
+    }
+};
+
+// Refresh token
+const refreshToken = async (req, res) => {
+    try {
+        const refreshToken = req.cookies?.refreshToken;
+
+        if (!refreshToken) {
+            return errorResponse(res, 'Refresh token required', 401);
+        }
+
+        // Verify refresh token
+        const decoded = verifyToken(refreshToken);
+
+        // Get user from database
+        const user = await prisma.user.findUnique({
+            where: { id: decoded.userId },
+            select: {
+                id: true,
+                name: true,
+                email: true,
+                createdAt: true,
+                updatedAt: true
+            }
+        });
+
+        if (!user) {
+            return errorResponse(res, 'User not found', 401);
+        }
+
+        // Generate new tokens
+        const tokens = generateTokens(user);
+
+        // Set new cookies
+        const cookieOptions = {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'strict',
+            maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+        };
+
+        res.cookie('accessToken', tokens.accessToken, cookieOptions);
+        res.cookie('refreshToken', tokens.refreshToken, {
+            ...cookieOptions,
+            maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
+        });
+
+        return successResponse(res, { user }, 'Token refreshed successfully');
+    } catch (error) {
+        console.error('Refresh token error:', error);
+        return errorResponse(res, 'Invalid or expired refresh token', 401);
+    }
+};
+
+// Get current user (from token)
+const getCurrentUser = async (req, res) => {
+    try {
+        // User is already attached to req by auth middleware
+        return successResponse(res, req.user, 'Current user retrieved successfully');
+    } catch (error) {
+        console.error('Get current user error:', error);
+        return errorResponse(res, 'Internal server error', 500);
+    }
+};
+
 module.exports = {
     registerUser,
     loginUser,
+    logoutUser,
+    refreshToken,
+    getCurrentUser,
     getUserProfile,
     updateUserProfile,
     changePassword,
