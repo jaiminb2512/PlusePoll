@@ -4,47 +4,50 @@ const { broadcastVoteUpdate } = require('../services/socketService');
 
 const prisma = new PrismaClient();
 
+/**
+ * Add a new vote
+ * - Validates poll + poll option existence
+ * - Prevents duplicate votes for the same option
+ * - Broadcasts vote updates in real-time
+ */
 const addVote = async (req, res) => {
     try {
         const { pollId, pollOptionId } = req.body;
         const userId = req.user.id;
 
+        // Basic validation
         if (!pollId || !pollOptionId) {
             return errorResponse(res, 'Poll ID and Poll Option ID are required', 400);
         }
 
+        // Ensure poll exists
         const poll = await prisma.poll.findUnique({
             where: { id: pollId },
-            include: {
-                options: true
-            }
+            include: { options: true }
         });
 
         if (!poll) {
             return errorResponse(res, 'Poll not found', 404);
         }
 
+        // Only allow voting on published polls
         if (!poll.isPublished) {
             return errorResponse(res, 'Cannot vote on unpublished poll', 403);
         }
 
+        // Ensure poll option belongs to this poll
         const pollOption = await prisma.pollOption.findFirst({
-            where: {
-                id: pollOptionId,
-                pollId: pollId
-            }
+            where: { id: pollOptionId, pollId: pollId }
         });
 
         if (!pollOption) {
             return errorResponse(res, 'Invalid poll option for this poll', 400);
         }
 
+        // Prevent user from voting for the same option more than once
         const existingVote = await prisma.vote.findUnique({
             where: {
-                userId_pollOptionId: {
-                    userId: userId,
-                    pollOptionId: pollOptionId
-                }
+                userId_pollOptionId: { userId, pollOptionId }
             }
         });
 
@@ -52,35 +55,17 @@ const addVote = async (req, res) => {
             return errorResponse(res, 'You have already voted for this option', 400);
         }
 
+        // Create vote
         const vote = await prisma.vote.create({
-            data: {
-                userId: userId,
-                pollId: pollId,
-                pollOptionId: pollOptionId
-            },
+            data: { userId, pollId, pollOptionId },
             include: {
-                user: {
-                    select: {
-                        id: true,
-                        name: true,
-                        email: true
-                    }
-                },
-                poll: {
-                    select: {
-                        id: true,
-                        question: true
-                    }
-                },
-                pollOption: {
-                    select: {
-                        id: true,
-                        text: true
-                    }
-                }
+                user: { select: { id: true, name: true, email: true } },
+                poll: { select: { id: true, question: true } },
+                pollOption: { select: { id: true, text: true } }
             }
         });
 
+        // Notify clients via WebSocket about updated results
         await broadcastVoteUpdate(pollId);
 
         return successResponse(res, vote, 'Vote added successfully', 201);
@@ -90,6 +75,11 @@ const addVote = async (req, res) => {
     }
 };
 
+/**
+ * Update an existing vote
+ * - Finds user’s vote for the given option
+ * - Updates to a new poll option if valid
+ */
 const updateVote = async (req, res) => {
     try {
         const { pollId, pollOptionId } = req.body;
@@ -99,60 +89,32 @@ const updateVote = async (req, res) => {
             return errorResponse(res, 'Poll ID and Poll Option ID are required', 400);
         }
 
+        // Ensure vote exists
         const existingVote = await prisma.vote.findUnique({
-            where: {
-                userId_pollOptionId: {
-                    userId: userId,
-                    pollOptionId: pollOptionId
-                }
-            }
+            where: { userId_pollOptionId: { userId, pollOptionId } }
         });
 
         if (!existingVote) {
             return errorResponse(res, 'No vote found to update', 404);
         }
 
+        // Ensure option belongs to this poll
         const pollOption = await prisma.pollOption.findFirst({
-            where: {
-                id: pollOptionId,
-                pollId: pollId
-            }
+            where: { id: pollOptionId, pollId: pollId }
         });
 
         if (!pollOption) {
             return errorResponse(res, 'Invalid poll option for this poll', 400);
         }
 
+        // Update vote
         const updatedVote = await prisma.vote.update({
-            where: {
-                userId_pollOptionId: {
-                    userId: userId,
-                    pollOptionId: pollOptionId
-                }
-            },
-            data: {
-                pollOptionId: pollOptionId
-            },
+            where: { userId_pollOptionId: { userId, pollOptionId } },
+            data: { pollOptionId },
             include: {
-                user: {
-                    select: {
-                        id: true,
-                        name: true,
-                        email: true
-                    }
-                },
-                poll: {
-                    select: {
-                        id: true,
-                        question: true
-                    }
-                },
-                pollOption: {
-                    select: {
-                        id: true,
-                        text: true
-                    }
-                }
+                user: { select: { id: true, name: true, email: true } },
+                poll: { select: { id: true, question: true } },
+                pollOption: { select: { id: true, text: true } }
             }
         });
 
@@ -165,36 +127,34 @@ const updateVote = async (req, res) => {
     }
 };
 
+/**
+ * Remove a user’s vote
+ * - Ensures the vote exists before deletion
+ * - Broadcasts updated poll results
+ */
 const removeVote = async (req, res) => {
     try {
         const { pollOptionId } = req.params;
         const userId = req.user.id;
 
+        // Ensure vote exists
         const existingVote = await prisma.vote.findUnique({
-            where: {
-                userId_pollOptionId: {
-                    userId: userId,
-                    pollOptionId: pollOptionId
-                }
-            }
+            where: { userId_pollOptionId: { userId, pollOptionId } }
         });
 
         if (!existingVote) {
             return errorResponse(res, 'No vote found to remove', 404);
         }
 
+        // Get poll ID for broadcasting updates later
         const poll = await prisma.pollOption.findUnique({
             where: { id: pollOptionId },
             select: { pollId: true }
         });
 
+        // Delete vote
         await prisma.vote.delete({
-            where: {
-                userId_pollOptionId: {
-                    userId: userId,
-                    pollOptionId: pollOptionId
-                }
-            }
+            where: { userId_pollOptionId: { userId, pollOptionId } }
         });
 
         if (poll) {
@@ -208,6 +168,10 @@ const removeVote = async (req, res) => {
     }
 };
 
+/**
+ * Get all votes by the current user
+ * - Supports pagination
+ */
 const getUserVotes = async (req, res) => {
     try {
         const { page = 1, limit = 10 } = req.query;
@@ -219,19 +183,9 @@ const getUserVotes = async (req, res) => {
                 where: { userId },
                 include: {
                     poll: {
-                        select: {
-                            id: true,
-                            question: true,
-                            isPublished: true,
-                            createdAt: true
-                        }
+                        select: { id: true, question: true, isPublished: true, createdAt: true }
                     },
-                    pollOption: {
-                        select: {
-                            id: true,
-                            text: true
-                        }
-                    }
+                    pollOption: { select: { id: true, text: true } }
                 },
                 skip,
                 take: parseInt(limit),
@@ -254,37 +208,29 @@ const getUserVotes = async (req, res) => {
     }
 };
 
+/**
+ * Get all votes for a specific poll
+ * - Supports pagination
+ */
 const getPollVotes = async (req, res) => {
     try {
         const { pollId } = req.params;
         const { page = 1, limit = 10 } = req.query;
         const skip = (parseInt(page) - 1) * parseInt(limit);
 
-        const poll = await prisma.poll.findUnique({
-            where: { id: pollId }
-        });
-
+        // Ensure poll exists
+        const poll = await prisma.poll.findUnique({ where: { id: pollId } });
         if (!poll) {
             return errorResponse(res, 'Poll not found', 404);
         }
 
+        // Fetch votes with user + option details
         const [votes, totalCount] = await Promise.all([
             prisma.vote.findMany({
                 where: { pollId },
                 include: {
-                    user: {
-                        select: {
-                            id: true,
-                            name: true,
-                            email: true
-                        }
-                    },
-                    pollOption: {
-                        select: {
-                            id: true,
-                            text: true
-                        }
-                    }
+                    user: { select: { id: true, name: true, email: true } },
+                    pollOption: { select: { id: true, text: true } }
                 },
                 skip,
                 take: parseInt(limit),
@@ -307,23 +253,18 @@ const getPollVotes = async (req, res) => {
     }
 };
 
+/**
+ * Get the current user’s vote(s) for a specific poll
+ */
 const getUserVoteForPoll = async (req, res) => {
     try {
         const { pollId } = req.params;
         const userId = req.user.id;
 
         const votes = await prisma.vote.findMany({
-            where: {
-                userId: userId,
-                pollId: pollId
-            },
+            where: { userId, pollId },
             include: {
-                pollOption: {
-                    select: {
-                        id: true,
-                        text: true
-                    }
-                }
+                pollOption: { select: { id: true, text: true } }
             }
         });
 

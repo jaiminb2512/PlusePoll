@@ -3,22 +3,31 @@ const { successResponse, errorResponse } = require('../utils/response');
 
 const prisma = new PrismaClient();
 
+/**
+ * Create a new poll with options.
+ * - Validates the request body.
+ * - Creates the poll and its options inside a transaction to ensure atomicity.
+ */
 const createPoll = async (req, res) => {
     try {
         const { question, options, isPublished = false } = req.body;
         const authorId = req.user.id;
 
+        // Basic validation: must have a question and at least 2 options
         if (!question || !options || !Array.isArray(options) || options.length < 2) {
             return errorResponse(res, 'Question and at least 2 options are required', 400);
         }
 
+        // Validate that each option has valid non-empty text
         for (const option of options) {
             if (!option.text || typeof option.text !== 'string' || option.text.trim().length === 0) {
                 return errorResponse(res, 'All options must have valid text', 400);
             }
         }
 
+        // Use a transaction so poll + options are created together safely
         const poll = await prisma.$transaction(async (tx) => {
+            // Create poll
             const newPoll = await tx.poll.create({
                 data: {
                     question: question.trim(),
@@ -27,6 +36,7 @@ const createPoll = async (req, res) => {
                 }
             });
 
+            // Create all poll options
             const pollOptions = await Promise.all(
                 options.map(option =>
                     tx.pollOption.create({
@@ -51,8 +61,12 @@ const createPoll = async (req, res) => {
     }
 };
 
+/**
+ * Get all polls with pagination, search, filtering, and sorting.
+ */
 const getAllPolls = async (req, res) => {
     try {
+        // Extract query params with defaults
         const {
             page = 1,
             limit = 10,
@@ -65,6 +79,7 @@ const getAllPolls = async (req, res) => {
 
         const skip = (parseInt(page) - 1) * parseInt(limit);
 
+        // Build dynamic filter (WHERE clause)
         const whereClause = {};
 
         if (search) {
@@ -82,35 +97,23 @@ const getAllPolls = async (req, res) => {
             whereClause.isPublished = isPublished === 'true';
         }
 
+        // Only allow sorting on certain fields
         const allowedSortFields = ['createdAt', 'updatedAt', 'question'];
         const sortField = allowedSortFields.includes(sortBy) ? sortBy : 'createdAt';
         const orderBy = { [sortField]: sortOrder };
 
+        // Fetch polls + total count in parallel
         const [polls, totalCount] = await Promise.all([
             prisma.poll.findMany({
                 where: whereClause,
                 include: {
-                    author: {
-                        select: {
-                            id: true,
-                            name: true,
-                            email: true
-                        }
-                    },
+                    author: { select: { id: true, name: true, email: true } },
                     options: {
                         include: {
-                            _count: {
-                                select: {
-                                    votes: true
-                                }
-                            }
+                            _count: { select: { votes: true } }
                         }
                     },
-                    _count: {
-                        select: {
-                            votes: true
-                        }
-                    }
+                    _count: { select: { votes: true } }
                 },
                 skip,
                 take: parseInt(limit),
@@ -133,6 +136,9 @@ const getAllPolls = async (req, res) => {
     }
 };
 
+/**
+ * Get a specific poll by its ID (with author + options + vote counts).
+ */
 const getPollById = async (req, res) => {
     try {
         const { pollId } = req.params;
@@ -140,27 +146,13 @@ const getPollById = async (req, res) => {
         const poll = await prisma.poll.findUnique({
             where: { id: pollId },
             include: {
-                author: {
-                    select: {
-                        id: true,
-                        name: true,
-                        email: true
-                    }
-                },
+                author: { select: { id: true, name: true, email: true } },
                 options: {
                     include: {
-                        _count: {
-                            select: {
-                                votes: true
-                            }
-                        }
+                        _count: { select: { votes: true } }
                     }
                 },
-                _count: {
-                    select: {
-                        votes: true
-                    }
-                }
+                _count: { select: { votes: true } }
             }
         });
 
@@ -175,12 +167,16 @@ const getPollById = async (req, res) => {
     }
 };
 
+/**
+ * Update poll (only if the logged-in user is the poll author).
+ */
 const updatePoll = async (req, res) => {
     try {
         const { pollId } = req.params;
         const { question, isPublished } = req.body;
         const userId = req.user.id;
 
+        // Check poll exists
         const existingPoll = await prisma.poll.findUnique({
             where: { id: pollId }
         });
@@ -189,10 +185,12 @@ const updatePoll = async (req, res) => {
             return errorResponse(res, 'Poll not found', 404);
         }
 
+        // Ensure only poll author can update
         if (existingPoll.authorId !== userId) {
             return errorResponse(res, 'You can only update your own polls', 403);
         }
 
+        // Update poll with conditional fields
         const updatedPoll = await prisma.poll.update({
             where: { id: pollId },
             data: {
@@ -200,27 +198,11 @@ const updatePoll = async (req, res) => {
                 ...(isPublished !== undefined && { isPublished })
             },
             include: {
-                author: {
-                    select: {
-                        id: true,
-                        name: true,
-                        email: true
-                    }
-                },
+                author: { select: { id: true, name: true, email: true } },
                 options: {
-                    include: {
-                        _count: {
-                            select: {
-                                votes: true
-                            }
-                        }
-                    }
+                    include: { _count: { select: { votes: true } } }
                 },
-                _count: {
-                    select: {
-                        votes: true
-                    }
-                }
+                _count: { select: { votes: true } }
             }
         });
 
@@ -231,6 +213,9 @@ const updatePoll = async (req, res) => {
     }
 };
 
+/**
+ * Delete poll (only if the logged-in user is the poll author).
+ */
 const deletePoll = async (req, res) => {
     try {
         const { pollId } = req.params;
@@ -248,9 +233,7 @@ const deletePoll = async (req, res) => {
             return errorResponse(res, 'You can only delete your own polls', 403);
         }
 
-        await prisma.poll.delete({
-            where: { id: pollId }
-        });
+        await prisma.poll.delete({ where: { id: pollId } });
 
         return successResponse(res, null, 'Poll deleted successfully');
     } catch (error) {
@@ -259,6 +242,9 @@ const deletePoll = async (req, res) => {
     }
 };
 
+/**
+ * Get all polls created by the logged-in user (with pagination).
+ */
 const getMyPolls = async (req, res) => {
     try {
         const {
@@ -287,19 +273,9 @@ const getMyPolls = async (req, res) => {
                 where: whereClause,
                 include: {
                     options: {
-                        include: {
-                            _count: {
-                                select: {
-                                    votes: true
-                                }
-                            }
-                        }
+                        include: { _count: { select: { votes: true } } }
                     },
-                    _count: {
-                        select: {
-                            votes: true
-                        }
-                    }
+                    _count: { select: { votes: true } }
                 },
                 skip,
                 take: parseInt(limit),
@@ -322,6 +298,9 @@ const getMyPolls = async (req, res) => {
     }
 };
 
+/**
+ * Publish/unpublish a poll (only poll author can do this).
+ */
 const togglePollPublish = async (req, res) => {
     try {
         const { pollId } = req.params;
@@ -344,27 +323,9 @@ const togglePollPublish = async (req, res) => {
             where: { id: pollId },
             data: { isPublished },
             include: {
-                author: {
-                    select: {
-                        id: true,
-                        name: true,
-                        email: true
-                    }
-                },
-                options: {
-                    include: {
-                        _count: {
-                            select: {
-                                votes: true
-                            }
-                        }
-                    }
-                },
-                _count: {
-                    select: {
-                        votes: true
-                    }
-                }
+                author: { select: { id: true, name: true, email: true } },
+                options: { include: { _count: { select: { votes: true } } } },
+                _count: { select: { votes: true } }
             }
         });
 
@@ -376,6 +337,9 @@ const togglePollPublish = async (req, res) => {
     }
 };
 
+/**
+ * Get poll statistics (vote count + percentage per option).
+ */
 const getPollStats = async (req, res) => {
     try {
         const { pollId } = req.params;
@@ -384,19 +348,9 @@ const getPollStats = async (req, res) => {
             where: { id: pollId },
             include: {
                 options: {
-                    include: {
-                        _count: {
-                            select: {
-                                votes: true
-                            }
-                        }
-                    }
+                    include: { _count: { select: { votes: true } } }
                 },
-                _count: {
-                    select: {
-                        votes: true
-                    }
-                }
+                _count: { select: { votes: true } }
             }
         });
 
@@ -405,10 +359,14 @@ const getPollStats = async (req, res) => {
         }
 
         const totalVotes = poll._count.votes;
+
+        // Attach percentage calculation for each option
         const optionsWithPercentages = poll.options.map(option => ({
             ...option,
             voteCount: option._count.votes,
-            percentage: totalVotes > 0 ? Math.round((option._count.votes / totalVotes) * 100) : 0
+            percentage: totalVotes > 0
+                ? Math.round((option._count.votes / totalVotes) * 100)
+                : 0
         }));
 
         const stats = {
